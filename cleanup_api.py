@@ -1,4 +1,5 @@
 # cleanup_api.py
+import re
 from fastapi import FastAPI, UploadFile, File, Request
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
@@ -38,22 +39,63 @@ COLUMN_MAP = {
 }
 
 
-def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Auto-detect and normalize ERP column names intelligently."""
+def clean_column_name(col):
+    """Normalize column names aggressively."""
 
-    normalized = {}
+    col = str(col)
+
+    # Remove leading/trailing whitespace
+    col = col.strip()
+
+    # Convert to lowercase
+    col = col.lower()
+
+    # Replace special characters with space
+    col = re.sub(r'[^a-z0-9]', ' ', col)
+
+    # Collapse multiple spaces
+    col = re.sub(r'\s+', ' ', col)
+
+    # Final strip
+    col = col.strip()
+
+    return col
+
+
+def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Enterprise-grade column auto-detection.
+    Handles messy ERP exports safely.
+    """
+
+    # Clean all incoming column names
+    cleaned_columns = {
+        original: clean_column_name(original)
+        for original in df.columns
+    }
+
+    df = df.rename(columns=cleaned_columns)
+
+    print("Cleaned column names:", cleaned_columns)
+
+    detected_mapping = {}
 
     for col in df.columns:
-        clean_col = str(col).strip().lower()
-
         for standard_name, possible_names in COLUMN_MAP.items():
-            if clean_col in possible_names:
-                normalized[col] = standard_name
+
+            possible_cleaned = [clean_column_name(x) for x in possible_names]
+
+            if col in possible_cleaned:
+
+                # Prevent duplicate mappings
+                if standard_name not in detected_mapping.values():
+                    detected_mapping[col] = standard_name
+
                 break
 
-    df = df.rename(columns=normalized)
+    df = df.rename(columns=detected_mapping)
 
-    print("Column mapping detected:", normalized)
+    print("Final detected mapping:", detected_mapping)
 
     missing = [col for col in COLUMN_MAP if col not in df.columns]
 
@@ -61,7 +103,7 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(
             f"Missing required columns: {missing}. "
             f"Found columns: {list(df.columns)}. "
-            f"Detected mapping: {normalized}"
+            f"Detected mapping: {detected_mapping}"
         )
 
     return df
