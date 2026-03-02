@@ -22,31 +22,35 @@ COLUMN_MAP = {
 
 
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Rename columns according to COLUMN_MAP and check required columns."""
+    """Normalize ERP column names safely by merging duplicates."""
 
-    # Normalize incoming column names
-    df.columns = df.columns.str.strip().str.lower()
+    df.columns = df.columns.str.strip()
 
-    column_mapping = {}
+    new_df = pd.DataFrame()
 
     for standard_name, variations in COLUMN_MAP.items():
-        for col in df.columns:
-            for variation in variations:
-                if variation in col:
-                    column_mapping[col] = standard_name
 
-    df = df.rename(columns=column_mapping)
+        matching_cols = [
+            col for col in df.columns
+            if col.lower().strip() in variations
+        ]
 
-    print("Normalized columns:", df.columns.tolist())
+        if matching_cols:
 
-    missing = [col for col in COLUMN_MAP if col not in df.columns]
+            # Combine columns by taking first non-null value across them
+            new_df[standard_name] = (
+                df[matching_cols]
+                .bfill(axis=1)
+                .iloc[:, 0]
+            )
 
-    if missing:
-        raise ValueError(
-            f"Missing required columns: {missing}. Found columns: {df.columns.tolist()}"
-        )
+        else:
+            raise ValueError(
+                f"Missing required column: {standard_name}. "
+                f"Found columns: {df.columns.tolist()}"
+            )
 
-    return df
+    return new_df
 
 
 def cleanup_dataframe(df: pd.DataFrame) -> pd.DataFrame:
