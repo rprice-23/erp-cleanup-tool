@@ -68,14 +68,13 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     Handles messy ERP exports safely.
     """
 
-    # Clean all incoming column names
-    cleaned_columns = {
-        original: clean_column_name(original)
-        for original in df.columns
-    }
+    # Clean incoming column names
+    cleaned_columns = {}
+    for original in df.columns:
+        cleaned = clean_column_name(original)
+        cleaned_columns[original] = cleaned
 
-
-df = df.rename(columns=cleaned_columns)
+    df = df.rename(columns=cleaned_columns)
 
     print("Cleaned column names:", cleaned_columns)
 
@@ -87,14 +86,11 @@ df = df.rename(columns=cleaned_columns)
             possible_cleaned = [clean_column_name(x) for x in possible_names]
 
             if col in possible_cleaned:
-
-                # Prevent duplicate mappings
                 if standard_name not in detected_mapping.values():
                     detected_mapping[col] = standard_name
-
                 break
 
-df = df.rename(columns=detected_mapping)
+    df = df.rename(columns=detected_mapping)
 
     print("Final detected mapping:", detected_mapping)
 
@@ -111,36 +107,35 @@ df = df.rename(columns=detected_mapping)
 
 
 def cleanup_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-                """Perform your existing cleanup logic."""
-                # Normalize column names first
-                df = normalize_columns(df)
+    """
+    Perform cleanup logic safely.
+    """
 
-                # Drop duplicates and sum quantities
-                cleaned_df = df.groupby(
+    df = normalize_columns(df)
+
+    cleaned_df = df.groupby(
         ["item_number", "description", "warehouse"],
         as_index=False
     )["quantity"].sum()
 
-        return cleaned_df
+    return cleaned_df
 
-
-        @ app.get("/", response_class=HTMLResponse)
-        async def home(request: Request):
+    @app.get("/", response_class=HTMLResponse)
+    async def home(request: Request):
     """Render home page."""
-        return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse("index.html", {"request": request})
 
-
-        @ app.post("/clean")
-        async def clean_file(file: UploadFile = File(...)):
+    @app.post("/clean")
+    async def clean_file(file: UploadFile = File(...)):
     """Endpoint to upload and clean an ERP Excel file."""
-        try:
+    try:
         # Save uploaded file
-        input_path= os.path.join(UPLOAD_FOLDER, file.filename)
+        input_path = os.path.join(UPLOAD_FOLDER, file.filename)
         with open(input_path, "wb") as buffer:
     shutil.copyfileobj(file.file, buffer)
-        print(f"File saved: {input_path}")
+    print(f"File saved: {input_path}")
 
-        # Read file (Excel or CSV)
+    # Read file (Excel or CSV)
     if file.filename.lower().endswith(".csv"):
         df = pd.read_csv(input_path)
     elif file.filename.lower().endswith(".xlsx") or file.filename.lower().endswith(".xls"):
@@ -151,24 +146,24 @@ def cleanup_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         print("Original columns:", df.columns.tolist())
 
         # Clean dataframe
-        cleaned_df= cleanup_dataframe(df)
+        cleaned_df = cleanup_dataframe(df)
 
         print("Cleaned columns:", cleaned_df.columns.tolist())
 
         # Clean dataframe
-        cleaned_df= cleanup_dataframe(df)
+        cleaned_df = cleanup_dataframe(df)
 
         # Save cleaned file
-        output_path= os.path.join(UPLOAD_FOLDER, f"cleaned_{file.filename}")
+        output_path = os.path.join(UPLOAD_FOLDER, f"cleaned_{file.filename}")
         cleaned_df.to_excel(output_path, index=False)
         print(f"File cleaned successfully: {output_path}")
 
         # Return file for download
         return FileResponse(
-    path = output_path,
-    filename = f"cleaned_{file.filename}",
-    media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
+            path=output_path,
+            filename=f"cleaned_{file.filename}",
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
     except Exception as e:
     print("ERROR OCCURRED:", str(e))
