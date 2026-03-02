@@ -1,14 +1,12 @@
 # cleanup_api.py
 import re
-from fastapi import FastAPI, UploadFile, File, Request
-from fastapi.responses import HTMLResponse, FileResponse
-from fastapi.templating import Jinja2Templates
+from fastapi import FastAPI, UploadFile, File
+from fastapi.responses import FileResponse
 import pandas as pd
 import shutil
 import os
 
 app = FastAPI()
-templates = Jinja2Templates(directory="templates")
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -43,36 +41,22 @@ def clean_column_name(col):
     """Normalize column names aggressively."""
 
     col = str(col)
-
-    # Remove leading/trailing whitespace
     col = col.strip()
-
-    # Convert to lowercase
     col = col.lower()
-
-    # Replace special characters with space
     col = re.sub(r'[^a-z0-9]', ' ', col)
-
-    # Collapse multiple spaces
     col = re.sub(r'\s+', ' ', col)
-
-    # Final strip
     col = col.strip()
 
     return col
 
 
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Enterprise-grade column auto-detection.
-    Handles messy ERP exports safely.
-    """
+    """Enterprise-grade column auto-detection."""
 
-    # Clean incoming column names
     cleaned_columns = {}
+
     for original in df.columns:
-        cleaned = clean_column_name(original)
-        cleaned_columns[original] = cleaned
+        cleaned_columns[original] = clean_column_name(original)
 
     df = df.rename(columns=cleaned_columns)
 
@@ -83,33 +67,37 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     for col in df.columns:
         for standard_name, possible_names in COLUMN_MAP.items():
 
-            possible_cleaned = [clean_column_name(x) for x in possible_names]
+            possible_cleaned = [
+                clean_column_name(x) for x in possible_names
+            ]
 
             if col in possible_cleaned:
+
                 if standard_name not in detected_mapping.values():
                     detected_mapping[col] = standard_name
+
                 break
 
     df = df.rename(columns=detected_mapping)
 
     print("Final detected mapping:", detected_mapping)
 
-    missing = [col for col in COLUMN_MAP if col not in df.columns]
+    missing = [
+        col for col in COLUMN_MAP
+        if col not in df.columns
+    ]
 
     if missing:
         raise ValueError(
             f"Missing required columns: {missing}. "
-            f"Found columns: {list(df.columns)}. "
-            f"Detected mapping: {detected_mapping}"
+            f"Found columns: {list(df.columns)}"
         )
 
     return df
 
 
 def cleanup_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Perform cleanup logic safely.
-    """
+    """Perform cleanup logic safely."""
 
     df = normalize_columns(df)
 
@@ -120,28 +108,41 @@ def cleanup_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     return cleaned_df
 
-    @app.get("/")
+
+@app.get("/")
 def home():
-    """Render home page."""
+    """Health check endpoint."""
     return {"message": "Inventory Cleanup API is running"}
 
-    @app.post("/clean")
-    async def clean_file(file: UploadFile = File(...)):
-    """Endpoint to upload and clean an ERP Excel file."""
-    try:
-        # Save uploaded file
-        input_path = os.path.join(UPLOAD_FOLDER, file.filename)
-        with open(input_path, "wb") as buffer:
-    shutil.copyfileobj(file.file, buffer)
-    print(f"File saved: {input_path}")
 
-    # Read file (Excel or CSV)
-    if file.filename.lower().endswith(".csv"):
-        df = pd.read_csv(input_path)
-    elif file.filename.lower().endswith(".xlsx") or file.filename.lower().endswith(".xls"):
-        df = pd.read_excel(input_path)
-    else:
-        raise ValueError("Unsupported file type. Please upload CSV or Excel.")
+@app.post("/clean")
+async def clean_file(file: UploadFile = File(...)):
+    """Upload and clean ERP file."""
+
+    try:
+
+        # Save uploaded file
+        input_path = os.path.join(
+            UPLOAD_FOLDER,
+            file.filename
+        )
+
+        with open(input_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        print("File saved:", input_path)
+
+        # Read file
+        if file.filename.lower().endswith(".csv"):
+            df = pd.read_csv(input_path)
+
+        elif file.filename.lower().endswith((".xlsx", ".xls")):
+            df = pd.read_excel(input_path)
+
+        else:
+            raise ValueError(
+                "Unsupported file type. Upload CSV or Excel."
+            )
 
         print("Original columns:", df.columns.tolist())
 
@@ -150,15 +151,17 @@ def home():
 
         print("Cleaned columns:", cleaned_df.columns.tolist())
 
-        # Clean dataframe
-        cleaned_df = cleanup_dataframe(df)
-
         # Save cleaned file
-        output_path = os.path.join(UPLOAD_FOLDER, f"cleaned_{file.filename}")
-        cleaned_df.to_excel(output_path, index=False)
-        print(f"File cleaned successfully: {output_path}")
+        output_path = os.path.join(
+            UPLOAD_FOLDER,
+            f"cleaned_{file.filename}"
+        )
 
-        # Return file for download
+        cleaned_df.to_excel(output_path, index=False)
+
+        print("File cleaned:", output_path)
+
+        # Return cleaned file
         return FileResponse(
             path=output_path,
             filename=f"cleaned_{file.filename}",
@@ -166,5 +169,9 @@ def home():
         )
 
     except Exception as e:
-    print("ERROR OCCURRED:", str(e))
-    return {"error": str(e)}
+
+        print("ERROR:", str(e))
+
+        return {
+            "error": str(e)
+        }
