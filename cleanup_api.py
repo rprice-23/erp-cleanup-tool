@@ -23,13 +23,29 @@ COLUMN_MAP = {
 
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Rename columns according to COLUMN_MAP and check required columns."""
-    df = df.rename(
-        columns={col: key for key, names in COLUMN_MAP.items()
-                 for col in df.columns if col.lower() in names}
-    )
+
+    # Normalize incoming column names
+    df.columns = df.columns.str.strip().str.lower()
+
+    column_mapping = {}
+
+    for standard_name, variations in COLUMN_MAP.items():
+        for col in df.columns:
+            for variation in variations:
+                if variation in col:
+                    column_mapping[col] = standard_name
+
+    df = df.rename(columns=column_mapping)
+
+    print("Normalized columns:", df.columns.tolist())
+
     missing = [col for col in COLUMN_MAP if col not in df.columns]
+
     if missing:
-        raise ValueError(f"Missing required columns: {missing}")
+        raise ValueError(
+            f"Missing required columns: {missing}. Found columns: {df.columns.tolist()}"
+        )
+
     return df
 
 
