@@ -74,7 +74,8 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
         for original in df.columns
     }
 
-    df = df.rename(columns=cleaned_columns)
+
+df = df.rename(columns=cleaned_columns)
 
     print("Cleaned column names:", cleaned_columns)
 
@@ -93,7 +94,7 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
 
                 break
 
-    df = df.rename(columns=detected_mapping)
+df = df.rename(columns=detected_mapping)
 
     print("Final detected mapping:", detected_mapping)
 
@@ -108,7 +109,8 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-                def cleanup_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+
+def cleanup_dataframe(df: pd.DataFrame) -> pd.DataFrame:
                 """Perform your existing cleanup logic."""
                 # Normalize column names first
                 df = normalize_columns(df)
