@@ -120,10 +120,10 @@ def cleanup_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     return cleaned_df
 
-    @app.get("/", response_class=HTMLResponse)
-    async def home(request: Request):
+    @app.get("/")
+def home():
     """Render home page."""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return {"message": "Inventory Cleanup API is running"}
 
     @app.post("/clean")
     async def clean_file(file: UploadFile = File(...)):
