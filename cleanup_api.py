@@ -83,25 +83,36 @@ async def clean_file(file: UploadFile = File(...)):
             shutil.copyfileobj(file.file, buffer)
         print(f"File saved: {input_path}")
 
-        # Read Excel file
-        df = pd.read_excel(input_path)
-        print("Columns found:", df.columns.tolist())
+    # Read file (Excel or CSV)
+if file.filename.lower().endswith(".csv"):
+    df = pd.read_csv(input_path)
+elif file.filename.lower().endswith(".xlsx") or file.filename.lower().endswith(".xls"):
+    df = pd.read_excel(input_path)
+else:
+    raise ValueError("Unsupported file type. Please upload CSV or Excel.")
 
-        # Clean dataframe
-        cleaned_df = cleanup_dataframe(df)
+print("Original columns:", df.columns.tolist())
 
-        # Save cleaned file
-        output_path = os.path.join(UPLOAD_FOLDER, f"cleaned_{file.filename}")
-        cleaned_df.to_excel(output_path, index=False)
-        print(f"File cleaned successfully: {output_path}")
+# Clean dataframe
+cleaned_df = cleanup_dataframe(df)
 
-        # Return file for download
-        return FileResponse(
-            path=output_path,
-            filename=f"cleaned_{file.filename}",
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+print("Cleaned columns:", cleaned_df.columns.tolist())
 
-    except Exception as e:
-        print("ERROR OCCURRED:", str(e))
-        return {"error": str(e)}
+# Clean dataframe
+cleaned_df = cleanup_dataframe(df)
+
+# Save cleaned file
+output_path = os.path.join(UPLOAD_FOLDER, f"cleaned_{file.filename}")
+cleaned_df.to_excel(output_path, index=False)
+print(f"File cleaned successfully: {output_path}")
+
+# Return file for download
+return FileResponse(
+    path=output_path,
+    filename=f"cleaned_{file.filename}",
+    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
+except Exception as e:
+    print("ERROR OCCURRED:", str(e))
+    return {"error": str(e)}
