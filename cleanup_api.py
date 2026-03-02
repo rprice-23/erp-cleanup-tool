@@ -14,105 +14,118 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Map possible ERP column names to standard names
 COLUMN_MAP = {
-    "item_number": ["item number", "itemno", "part number", "sku", "item_number"],
-    "description": ["description", "desc", "item description"],
-    "warehouse": ["warehouse", "wh", "warehouse location"],
-    "quantity": ["qty", "quantity", "quantity on hand", "on hand"]
+    "item_number": [
+        "item number", "item_number", "item no", "item no.",
+        "part number", "part_number", "part no", "part#",
+        "sku", "product code", "product_code", "material"
+    ],
+
+    "description": [
+        "description", "desc", "item description",
+        "product description", "product_desc"
+    ],
+
+    "warehouse": [
+        "warehouse", "wh", "whse", "warehouse code",
+        "warehouse location", "location", "site"
+    ],
+
+    "quantity": [
+        "qty", "quantity", "quantity on hand",
+        "on hand", "onhand", "stock qty",
+        "stock quantity", "inventory", "balance"
+    ]
 }
 
 
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalize ERP column names safely by merging duplicates."""
+    """Auto-detect and normalize ERP column names intelligently."""
 
-    df.columns = df.columns.str.strip()
+    normalized = {}
 
-    new_df = pd.DataFrame()
+    for col in df.columns:
+        clean_col = str(col).strip().lower()
 
-    for standard_name, variations in COLUMN_MAP.items():
+        for standard_name, possible_names in COLUMN_MAP.items():
+            if clean_col in possible_names:
+                normalized[col] = standard_name
+                break
 
-        matching_cols = [
-            col for col in df.columns
-            if col.lower().strip() in variations
-        ]
+    df = df.rename(columns=normalized)
 
-        if matching_cols:
+    print("Column mapping detected:", normalized)
 
-            # Combine columns by taking first non-null value across them
-            new_df[standard_name] = (
-                df[matching_cols]
-                .bfill(axis=1)
-                .iloc[:, 0]
-            )
+    missing = [col for col in COLUMN_MAP if col not in df.columns]
 
-        else:
-            raise ValueError(
-                f"Missing required column: {standard_name}. "
-                f"Found columns: {df.columns.tolist()}"
-            )
+    if missing:
+        raise ValueError(
+            f"Missing required columns: {missing}. "
+            f"Found columns: {list(df.columns)}. "
+            f"Detected mapping: {normalized}"
+        )
 
-    return new_df
+    return df
 
+                def cleanup_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+                """Perform your existing cleanup logic."""
+                # Normalize column names first
+                df = normalize_columns(df)
 
-def cleanup_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """Perform your existing cleanup logic."""
-    # Normalize column names first
-    df = normalize_columns(df)
-
-    # Drop duplicates and sum quantities
-    cleaned_df = df.groupby(
+                # Drop duplicates and sum quantities
+                cleaned_df = df.groupby(
         ["item_number", "description", "warehouse"],
         as_index=False
     )["quantity"].sum()
 
-    return cleaned_df
+        return cleaned_df
 
 
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
+        @ app.get("/", response_class=HTMLResponse)
+        async def home(request: Request):
     """Render home page."""
-    return templates.TemplateResponse("index.html", {"request": request})
+        return templates.TemplateResponse("index.html", {"request": request})
 
 
-@app.post("/clean")
-async def clean_file(file: UploadFile = File(...)):
+        @ app.post("/clean")
+        async def clean_file(file: UploadFile = File(...)):
     """Endpoint to upload and clean an ERP Excel file."""
-    try:
+        try:
         # Save uploaded file
-        input_path = os.path.join(UPLOAD_FOLDER, file.filename)
+        input_path= os.path.join(UPLOAD_FOLDER, file.filename)
         with open(input_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+    shutil.copyfileobj(file.file, buffer)
         print(f"File saved: {input_path}")
 
-    # Read file (Excel or CSV)
-if file.filename.lower().endswith(".csv"):
-    df = pd.read_csv(input_path)
-elif file.filename.lower().endswith(".xlsx") or file.filename.lower().endswith(".xls"):
-    df = pd.read_excel(input_path)
-else:
-    raise ValueError("Unsupported file type. Please upload CSV or Excel.")
+        # Read file (Excel or CSV)
+    if file.filename.lower().endswith(".csv"):
+        df = pd.read_csv(input_path)
+    elif file.filename.lower().endswith(".xlsx") or file.filename.lower().endswith(".xls"):
+        df = pd.read_excel(input_path)
+    else:
+        raise ValueError("Unsupported file type. Please upload CSV or Excel.")
 
-print("Original columns:", df.columns.tolist())
+        print("Original columns:", df.columns.tolist())
 
-# Clean dataframe
-cleaned_df = cleanup_dataframe(df)
+        # Clean dataframe
+        cleaned_df= cleanup_dataframe(df)
 
-print("Cleaned columns:", cleaned_df.columns.tolist())
+        print("Cleaned columns:", cleaned_df.columns.tolist())
 
-# Clean dataframe
-cleaned_df = cleanup_dataframe(df)
+        # Clean dataframe
+        cleaned_df= cleanup_dataframe(df)
 
-# Save cleaned file
-output_path = os.path.join(UPLOAD_FOLDER, f"cleaned_{file.filename}")
-cleaned_df.to_excel(output_path, index=False)
-print(f"File cleaned successfully: {output_path}")
+        # Save cleaned file
+        output_path= os.path.join(UPLOAD_FOLDER, f"cleaned_{file.filename}")
+        cleaned_df.to_excel(output_path, index=False)
+        print(f"File cleaned successfully: {output_path}")
 
-# Return file for download
-return FileResponse(
-    path=output_path,
-    filename=f"cleaned_{file.filename}",
-    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        # Return file for download
+        return FileResponse(
+    path = output_path,
+    filename = f"cleaned_{file.filename}",
+    media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
-except Exception as e:
+    except Exception as e:
     print("ERROR OCCURRED:", str(e))
     return {"error": str(e)}
