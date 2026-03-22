@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>ERP Inventory Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            font-family: Arial;
+            margin: 20px;
+            background: #f5f6fa;
+        }
+
+        h1 {
+            margin-bottom: 15px;
+        }
+
+        #drop-zone {
+            border: 2px dashed #999;
+            padding: 30px;
+            text-align: center;
+            background: white;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            transition: 0.2s;
+        }
+
+        #drop-zone.dragover {
+            background: #dcdde1;
+        }
+
+        button {
+            cursor: pointer;
+            padding: 6px 10px;
+        }
+
+        .status {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        .file-name {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #555;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            margin-top: 10px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+
+        th {
+            background: #2f3640;
+            color: white;
+        }
+
+        tr:nth-child(even) {
+            background: #f2f2f2;
+        }
+
+        .controls {
+            margin-bottom: 15px;
+        }
+
+        .summary {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        canvas {
+            background: white;
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>ERP Inventory Dashboard</h1>
+
+    <!-- UPLOAD -->
+    <div id="drop-zone">
+        <p><strong>Drag & Drop ERP File Here</strong></p>
+        <p>or</p>
+        <input type="file" id="file-input">
+        <br><br>
+        <button id="upload-btn">Upload & Clean</button>
+        <div class="file-name" id="file-name"></div>
+        <div class="status" id="upload-status"></div>
+    </div>
+
+    <!-- FILTERS -->
+    <div class="controls">
+        <input id="search-box" placeholder="Search by item or description...">
+        <select id="warehouse-select">
+            <option value="ALL">ALL</option>
+        </select>
+        <button id="export-btn">Export CSV</button>
+    </div>
+
+    <div class="summary" id="summary"></div>
+    <div id="warehouse-summary"></div>
+
+    <table>
+        <thead id="table-head"></thead>
+        <tbody id="table-body"></tbody>
+    </table>
+
+    <h3>Inventory by Warehouse</h3>
+    <canvas id="warehouseChart"></canvas>
+
+    <h3>Top 10 Items</h3>
+    <canvas id="topItemsChart"></canvas>
+
+    <h3>Compare Files</h3>
+    <select id="file1"></select>
+    <select id="file2"></select>
+    <button id="compare-btn">Compare</button>
+
+    <div id="compare-summary"></div>
+
+    <table>
+        <thead id="compare-head"></thead>
+        <tbody id="compare-body"></tbody>
+    </table>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+
+            let allData = [];
+            let warehouseChartInstance = null;
+            let topItemsChartInstance = null;
+
+            // ELEMENTS
+            const dropZone = document.getElementById("drop-zone");
+            const fileInput = document.getElementById("file-input");
+            const uploadBtn = document.getElementById("upload-btn");
+            const uploadStatus = document.getElementById("upload-status");
+            const fileNameDisplay = document.getElementById("file-name");
+
+            const searchBox = document.getElementById("search-box");
+            const warehouseSelect = document.getElementById("warehouse-select");
+            const exportBtn = document.getElementById("export-btn");
+            const compareBtn = document.getElementById("compare-btn");
+
+            // =====================
+            // FETCH DATA
+            // =====================
+            async function fetchData() {
+                const res = await fetch("/dashboard/data");
+                const data = await res.json();
+                if (data.error) return;
+
+                allData = data;
+                populateDropdown(data);
+                renderAll(data);
+            }
+
+            function renderAll(data) {
+                renderTable(data);
+                updateSummary(data);
+                renderWarehouseSummary(data);
+                renderWarehouseChart(data);
+                renderTopItemsChart(data);
+            }
+
+            function renderTable(data) {
+                if (!data.length) return;
+                const headers = Object.keys(data[0]);
+
+                document.getElementById("table-head").innerHTML = "<tr>" +
+                    headers.map(h => `<th>${h}</th>`).join("") + "</tr>";
+
+                document.getElementById("table-body").innerHTML = data.map(r =>
+                    "<tr>" + headers.map(h => `<td>${r[h]}</td>`).join("") + "</tr>"
+                ).join("");
+            }
+
+            function updateSummary(data) {
+                const total = data.reduce((s, r) => s + r.quantity, 0);
+                document.getElementById("summary").innerText = `Records: ${data.length} | Total Qty: ${total}`;
+            }
+
+            function renderWarehouseSummary(data) {
+                const s = {};
+                data.forEach(r => {
+                    if (!s[r.warehouse]) s[r.warehouse] = 0;
+                    s[r.warehouse] += r.quantity;
+                });
+
+                document.getElementById("warehouse-summary").innerHTML =
+                    Object.entries(s).map(([k, v]) => `<div>${k}: ${v}</div>`).join("");
+            }
+
+            function populateDropdown(data) {
+                const w = [...new Set(data.map(d => d.warehouse))];
+                warehouseSelect.innerHTML =
+                    `<option value="ALL">ALL</option>` +
+                    w.map(x => `<option>${x}</option>`).join("");
+            }
+
+            function filterData() {
+                let d = allData;
+                const w = warehouseSelect.value;
+                const s = searchBox.value.toLowerCase();
+
+                if (w !== "ALL") d = d.filter(x => x.warehouse === w);
+                if (s) d = d.filter(x =>
+                    x.item_number.toLowerCase().includes(s) ||
+                    x.description.toLowerCase().includes(s)
+                );
+
+                renderAll(d);
+            }
+
+            function exportData() {
+                const rows = document.querySelectorAll("#table-body tr");
+                if (!rows.length) return alert("No data to export");
+
+                const csv = [];
+                rows.forEach(r => {
+                    const cols = r.querySelectorAll("td");
+                    csv.push(Array.from(cols).map(td => td.innerText).join(","));
+                });
+                const blob = new Blob([csv.join("\n")], { type: "text/csv" });
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = "inventory.csv";
+                a.click();
+            }
+
+            // =====================
+            // CHARTS
+            // =====================
+            function renderWarehouseChart(data) {
+                const s = {};
+                data.forEach(r => {
+                    if (!s[r.warehouse]) s[r.warehouse] = 0;
+                    s[r.warehouse] += r.quantity;
+                });
+
+                const ctx = document.getElementById("warehouseChart");
+                if (warehouseChartInstance) warehouseChartInstance.destroy();
+
+                warehouseChartInstance = new Chart(ctx, { type: "bar", data: { labels: Object.keys(s), datasets: [{ label: "Quantity", data: Object.values(s), backgroundColor: "rgba(54,162,235,0.6)" }] } });
+            }
+
+            function renderTopItemsChart(data) {
+                const s = {};
+                data.forEach(r => {
+                    if (!s[r.item_number]) s[r.item_number] = 0;
+                    s[r.item_number] += r.quantity;
+                });
+
+                const sorted = Object.entries(s).sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+                const ctx = document.getElementById("topItemsChart");
+                if (topItemsChartInstance) topItemsChartInstance.destroy();
+
+                topItemsChartInstance = new Chart(ctx, {
+                    type: "bar",
+                    data: { labels: sorted.map(x => x[0]), datasets: [{ label: "Quantity", data: sorted.map(x => x[1]), backgroundColor: "rgba(255,99,132,0.6)" }] },
+                    options: { indexAxis: "y" }
+                });
+            }
+
+            // =====================
+            // UPLOAD
+            // =====================
+            async function uploadFile(file) {
+                const fd = new FormData();
+                fd.append("file", file);
+
+                uploadStatus.innerText = "Uploading and cleaning...";
+
+                try {
+                    const res = await fetch("/clean", { method: "POST", body: fd });
+                    if (!res.ok) throw new Error();
+
+                    const blob = await res.blob();
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = file.name.replace(/\..+$/, "_cleaned.xlsx");
+                    a.click();
+
+                    uploadStatus.innerText = "✅ Done";
+                    setTimeout(() => { fetchData(); loadFiles(); }, 500);
+
+                } catch (e) {
+                    uploadStatus.innerText = "❌ Upload failed";
+                    console.error(e);
+                }
+            }
+
+            // DRAG + DROP
+            dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("dragover"); });
+            dropZone.addEventListener("dragleave", () => { dropZone.classList.remove("dragover"); });
+            dropZone.addEventListener("drop", (e) => {
+                e.preventDefault();
+                dropZone.classList.remove("dragover");
+                if (e.dataTransfer.files.length > 0) {
+                    fileNameDisplay.innerText = e.dataTransfer.files[0].name;
+                    uploadFile(e.dataTransfer.files[0]);
+                }
+            });
+
+            // MANUAL
+            uploadBtn.addEventListener("click", () => {
+                if (!fileInput.files.length) return alert("Select a file");
+                fileNameDisplay.innerText = fileInput.files[0].name;
+                uploadFile(fileInput.files[0]);
+            });
+
+            fileInput.addEventListener("change", () => {
+                if (fileInput.files.length) {
+                    fileNameDisplay.innerText = fileInput.files[0].name;
+                }
+            });
+
+            // =====================
+            // FILE LIST
+            // =====================
+            async function loadFiles() {
+                const res = await fetch("/dashboard/files");
+                const files = await res.json();
+
+                const opts = files.map(f => `<option>${f.name}</option>`).join("");
+
+                document.getElementById("file1").innerHTML = opts;
+                document.getElementById("file2").innerHTML = opts;
+            }
+
+            // =====================
+            // COMPARE
+            // =====================
+            async function compareFiles() {
+                const f1 = document.getElementById("file1").value;
+                const f2 = document.getElementById("file2").value;
+
+                const res = await fetch(`/dashboard/compare?file1=${f1}&file2=${f2}`);
+                const data = await res.json();
+
+                renderCompare(data);
+            }
+
+            function renderCompare(data) {
+                if (!data.length) return;
+
+                const headers = Object.keys(data[0]);
+
+                document.getElementById("compare-head").innerHTML = "<tr>" +
+                    headers.map(h => `<th>${h}</th>`).join("") + "</tr>";
+
+                document.getElementById("compare-body").innerHTML = data.map(r =>
+                    "<tr>" + headers.map(h => {
+                        let v = r[h];
+                        if (h === "quantity_change") {
+                            if (v > 0) return `<td style="color:green;">+${v}</td>`;
+                            if (v < 0) return `<td style="color:red;">${v}</td>`;
+                        }
+                        return `<td>${v}</td>`;
+                    }).join("") + "</tr>"
+                ).join("");
+
+                const total = data.reduce((s, r) => s + r.quantity_change, 0);
+                document.getElementById("compare-summary").innerText = `Net Change: ${total}`;
+            }
+
+            // EVENTS
+            warehouseSelect.addEventListener("change", filterData);
+            searchBox.addEventListener("input", filterData);
+            exportBtn.addEventListener("click", exportData);
+            compareBtn.addEventListener("click", compareFiles);
+
+            // INIT
+            fetchData();
+            loadFiles();
+
+        });
+    </script>
+
+</body>
+
+</html>
