@@ -1,4 +1,21 @@
-__pycache__/
-*.pyc
+# macOS system files
 .DS_Store
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment folder
+venv/
+
+# Excel uploads / cleaned files
 uploads/
+
+# IDE/editor files
+.vscode/
+.idea/
+
+# Other temp files
+*.log
+*.tmp
