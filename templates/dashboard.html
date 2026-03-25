@@ -1,8 +1,13 @@
+<<<<<<< HEAD
+=======
+<!-- templates/dashboard.html -->
+>>>>>>> 57d8483 (Add core ERP cleanup tool updates)
 <!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
+<<<<<<< HEAD
     <title>ERP Inventory Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -392,6 +397,38 @@
         });
     </script>
 
+=======
+    <title>ERP Dashboard</title>
+</head>
+
+<body>
+    <h1>Step 2: Dashboard</h1>
+
+    <h2>Warehouses</h2>
+    <select>
+        {% for wh in data | extract_warehouses %}
+        <option>{{ wh }}</option>
+        {% endfor %}
+    </select>
+
+    <h2>Inventory Table</h2>
+    <table border="1">
+        <tr>
+            {% for col in data.columns %}
+            <th>{{ col }}</th>
+            {% endfor %}
+        </tr>
+        {% for row in data.itertuples() %}
+        <tr>
+            {% for value in row[1:] %}
+            <td>{{ value }}</td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </table>
+
+    <p><a href="/">Upload another file</a></p>
+>>>>>>> 57d8483 (Add core ERP cleanup tool updates)
 </body>
 
 </html>

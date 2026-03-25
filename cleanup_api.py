@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 import os
@@ -18,7 +19,24 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 TEMPLATE_FOLDER = os.path.join(BASE_DIR, "templates")
 
+# cleanup_api.py
+import os
+import re
+import shutil
+import pandas as pd
+
+from fastapi import FastAPI, UploadFile, File, Request
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+# -------------------------------
+# APP AND FOLDERS
+# -------------------------------
+app = FastAPI()
+(Add core ERP cleanup tool updates)
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 
 templates = Jinja2Templates(directory=TEMPLATE_FOLDER)
 
@@ -38,6 +56,41 @@ COLUMN_MAP = {
 
 
 def clean_column_name(col):
+
+templates = Jinja2Templates(directory="templates")
+
+# -------------------------------
+# COLUMN MAPPING
+# -------------------------------
+COLUMN_MAP = {
+    "item_number": [
+        "item number", "item_number", "item no", "item no.",
+        "part number", "part_number", "part no", "part#",
+        "sku", "product code", "product_code", "material"
+    ],
+    "description": [
+        "description", "desc", "item description",
+        "product description", "product_desc"
+    ],
+    "warehouse": [
+        "warehouse", "wh", "whse", "warehouse code",
+        "warehouse location", "location", "site"
+    ],
+    "quantity": [
+        "qty", "quantity", "quantity on hand",
+        "on hand", "onhand", "stock qty",
+        "stock quantity", "inventory", "balance"
+    ]
+}
+
+# -------------------------------
+# COLUMN CLEANING FUNCTIONS
+# -------------------------------
+
+
+def clean_column_name(col):
+    """Normalize column names aggressively."""
+(Add core ERP cleanup tool updates)
     col = str(col).strip().lower()
     col = re.sub(r'[^a-z0-9]', ' ', col)
     col = re.sub(r'\s+', ' ', col).strip()
@@ -61,6 +114,19 @@ def normalize_columns(df: pd.DataFrame, mapping: dict = None):
                 clean_column_name(p) for p in possibilities]
             if any(p in col for p in cleaned_possibilities):
                 detected_mapping[col] = std_name
+
+def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize column names and map to standard ERP columns."""
+    cleaned_columns = {c: clean_column_name(c) for c in df.columns}
+    df = df.rename(columns=cleaned_columns)
+
+    detected_mapping = {}
+    for col in df.columns:
+        for standard_name, possible_names in COLUMN_MAP.items():
+            possible_cleaned = [clean_column_name(x) for x in possible_names]
+            if col in possible_cleaned and standard_name not in detected_mapping.values():
+                detected_mapping[col] = standard_name
+(Add core ERP cleanup tool updates)
                 break
     if mapping:
         for k, v in mapping.items():
@@ -70,6 +136,7 @@ def normalize_columns(df: pd.DataFrame, mapping: dict = None):
     return df, detected_mapping
 
 
+
 def cleanup_dataframe(df: pd.DataFrame):
     df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0)
     df = df[df["item_number"].notna()]
@@ -77,6 +144,12 @@ def cleanup_dataframe(df: pd.DataFrame):
         "quantity"].sum()
     return grouped
 
+
+    missing = [col for col in COLUMN_MAP if col not in df.columns]
+    if missing:
+        raise ValueError(
+            f"Missing required columns: {missing}. Found columns: {list(df.columns)}")
+(Add core ERP cleanup tool updates)
 
 def read_file(file_path: str):
     if file_path.lower().endswith(".csv"):
@@ -94,9 +167,25 @@ def read_file(file_path: str):
         df.columns = [f"col_{i}" for i in range(df.shape[1])]
     return df
 
+
 # -----------------------
 # API Routes
 # -----------------------
+
+
+def cleanup_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Perform cleanup logic safely."""
+    df = normalize_columns(df)
+    cleaned_df = df.groupby(
+        ["item_number", "description", "warehouse"],
+        as_index=False
+    )["quantity"].sum()
+    return cleaned_df
+(Add core ERP cleanup tool updates)
+
+# -------------------------------
+# CUSTOM JINJA FILTERS
+# -------------------------------
 
 
 @app.get("/")
@@ -203,3 +292,73 @@ app = FastAPI()
 @app.get("/test")
 def test():
     return {"status": "server working"}
+
+
+def extract_warehouses(df: pd.DataFrame):
+    """Return sorted unique warehouse names from DataFrame."""
+    if "warehouse" in df.columns:
+        return sorted(df["warehouse"].dropna().unique())
+    return []
+
+
+templates.env.filters["extract_warehouses"] = extract_warehouses
+
+# -------------------------------
+# ROUTES
+# -------------------------------
+
+
+@app.get("/", response_class=HTMLResponse)
+def home(request: Request):
+    """Render file upload page."""
+    return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.post("/clean")
+async def clean_file(file: UploadFile = File(...)):
+    """Upload and clean ERP file."""
+    try:
+        input_path = os.path.join(UPLOAD_FOLDER, file.filename)
+        with open(input_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        # Read file
+        if file.filename.lower().endswith(".csv"):
+            df = pd.read_csv(input_path)
+        elif file.filename.lower().endswith((".xlsx", ".xls")):
+            df = pd.read_excel(input_path)
+        else:
+            raise ValueError("Unsupported file type. Upload CSV or Excel.")
+
+        cleaned_df = cleanup_dataframe(df)
+
+        output_path = os.path.join(UPLOAD_FOLDER, f"cleaned_{file.filename}")
+        cleaned_df.to_excel(output_path, index=False)
+
+        return FileResponse(
+            path=output_path,
+            filename=f"cleaned_{file.filename}",
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard(request: Request):
+    """Render dashboard page with latest cleaned file."""
+    try:
+        latest_file = max(
+            [f for f in os.listdir(UPLOAD_FOLDER) if f.startswith("cleaned_")],
+            key=lambda x: os.path.getctime(os.path.join(UPLOAD_FOLDER, x))
+        )
+        df = pd.read_excel(os.path.join(UPLOAD_FOLDER, latest_file))
+    except Exception:
+        df = pd.DataFrame()
+
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {"request": request, "data": df}
+    )
+(Add core ERP cleanup tool updates)
